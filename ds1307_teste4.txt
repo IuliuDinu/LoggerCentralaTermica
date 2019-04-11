@@ -1,24 +1,66 @@
-EEPROM usage: 0 byte(s), 0,0% of EEPROM
-Program size: 2340 words (4680 bytes), 57,1% of FLASH
-703 words (1406 bytes), 23,1% reduced by Code Compression
+EEPROM usage: 350 byte(s), 68.4% of EEPROM
+Program size: 2752 words (5504 bytes), 67.2% of FLASH
+798 words (1596 bytes), 22.5% reduced by Code Compression
 
-EEPROM usage: 0 byte(s), 0,0% of EEPROM
-Program size: 2243 words (4486 bytes), 54,8% of FLASH
-691 words (1382 bytes), 23,6% reduced by Code Compression
+Modificari in alemele.c+h (29.01.2019)
+Modificari in clock.c+h (30.01.2019): GetDay,GetMonth,GetYear,GetDOW
 
-EEPROM usage: 470 byte(s), 91,8% of EEPROM
-Program size: 3173 words (6346 bytes), 77,5% of FLASH
-951 words (1902 bytes), 23,1% reduced by Code Compression
+EEPROM usage: 445 byte(s), 86.9% of EEPROM
+Program size: 2921 words (5842 bytes), 71.3% of FLASH
 
-EEPROM usage: 470 byte(s), 91,8% of EEPROM
-Program size: 2945 words (5890 bytes), 71,9% of FLASH
-941 words (1882 bytes), 24,2% reduced by Code Compression
-(fara apelurile la GetTimeString24H si fara TimeDiffInMinutes)
+EEPROM usage: 470 byte(s), 91.8% of EEPROM
+Program size: 3153 words (6306 bytes), 77.0% of FLASH
+932 words (1864 bytes), 22.8% reduced by Code Compression
 
-EEPROM usage: 470 byte(s), 91,8% of EEPROM
-Program size: 3190 words (6380 bytes), 77,9% of FLASH
-960 words (1920 bytes), 23,1% reduced by Code Compression (pentru 3 variabile in plus, globale tip char)
+EEPROM usage: 470 byte(s), 91.8% of EEPROM
+Program size: 2940 words (5880 bytes), 71.8% of FLASH - fara f_ReadOneDay (cam nasol)
 
-EEPROM usage: 470 byte(s), 91,8% of EEPROM
-Program size: 3135 words (6270 bytes), 76,5% of FLASH
-975 words (1950 bytes), 23,7% reduced by Code Compression
+EEPROM usage: 467 byte(s), 91.2% of EEPROM
+Program size: 3256 words (6512 bytes), 79.5% of FLASH
+1041 words (2082 bytes), 24.2% reduced by Code Compression - cu f_Read_Statistics_Daily implementat
+
+EEPROM usage: 469 byte(s), 91.6% of EEPROM
+Program size: 3290 words (6580 bytes), 80.3% of FLASH
+1047 words (2094 bytes), 24.1% reduced by Code Compression - cu Save1DayData apelat din Idle la schimbare zi
+
+EEPROM usage: 469 byte(s), 91.6% of EEPROM
+Program size: 3306 words (6612 bytes), 80.7% of FLASH
+1051 words (2102 bytes), 24.1% reduced by Code Compression - cu flagurile start_day, stop_day, today, saved incluse in ResetEeprom
+
+EEPROM usage: 469 byte(s), 91.6% of EEPROM
+Program size: 3299 words (6598 bytes), 80.5% of FLASH
+1043 words (2086 bytes), 24.0% reduced by Code Compression
+
+EEPROM usage: 469 byte(s), 91.6% of EEPROM
+Program size: 3368 words (6736 bytes), 82.2% of FLASH
+1163 words (2326 bytes), 25.7% reduced by Code Compression - cu f_Read_Statistics_Monthly implementat
+
+EEPROM usage: 470 byte(s), 91.8% of EEPROM
+Program size: 3453 words (6906 bytes), 84.3% of FLASH
+1196 words (2392 bytes), 25.7% reduced by Code Compression - cu handler pentru Save1MonthData() implementat in f_Idle()
+
+EEPROM usage: 476 byte(s), 93.0% of EEPROM
+Program size: 3482 words (6964 bytes), 85.0% of FLASH
+1198 words (2396 bytes), 25.6% reduced by Code Compression
+
+
+
+
+
+
+
+
+
+ISSUES: 
+1. (SOLVED) La Save din Idle dupa ora 00:00, imi strica data penultima (trece din 9 in 10, imi strica 8) - confirmat pe zile succesive
+HINT: La Save din ProcessInputRelay_OFF nu apare problema - SOLVED: mutat flagul "saved = 1" in ProcessInputRelay_OFF()
+2. (SOLVED) La read 1 day, ora 0 mi-o arata 12, de corectat - SOLVED: In ProcessRelayON()
+3. (DONE) De implementat Save1MonthData() si apelat la momentul corect, cu conditiile corecte.
+4. (SOLVED) De limitat numarul de zi, luna, an la valori admise, in functia de set date
+5. (SOLVED) La Save month, la trecerea din decembrie in ianuarie, afiseaza 0. Din 1 se scade 1 si afiseaza 0, care ar trebui sa fie de fapt 12 (luna anterioara). SOLVED: la salvare,
+verifica daca e 0. Daca da, il face 12.
+6. (SOLVED) De grupat flag-urile independente intr-un flag de tip char - SOLVED: nu este cazul, sunt suficient de putine flag-uri in total incat nu se justifica economia de biti.
+7. (TBD) La schimbare data, daca se schimba luna, fa apel la Save1MonthData(), indiferent de ziua setata.
+8. (OPTIONAL) De afisat JAN, FEB, MAR etc. in ReadHistoryMonthly in loc de numarul lunii.
+9. (SOLVED) De inlocuit constante numerice cu define-uri.
+10. (TBD) De stabilit iesirea pentru releu si impelementat in functiile RelayOFF si RelayON.
