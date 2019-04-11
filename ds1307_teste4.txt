@@ -1,0 +1,24 @@
+EEPROM usage: 0 byte(s), 0,0% of EEPROM
+Program size: 2340 words (4680 bytes), 57,1% of FLASH
+703 words (1406 bytes), 23,1% reduced by Code Compression
+
+EEPROM usage: 0 byte(s), 0,0% of EEPROM
+Program size: 2243 words (4486 bytes), 54,8% of FLASH
+691 words (1382 bytes), 23,6% reduced by Code Compression
+
+EEPROM usage: 470 byte(s), 91,8% of EEPROM
+Program size: 3173 words (6346 bytes), 77,5% of FLASH
+951 words (1902 bytes), 23,1% reduced by Code Compression
+
+EEPROM usage: 470 byte(s), 91,8% of EEPROM
+Program size: 2945 words (5890 bytes), 71,9% of FLASH
+941 words (1882 bytes), 24,2% reduced by Code Compression
+(fara apelurile la GetTimeString24H si fara TimeDiffInMinutes)
+
+EEPROM usage: 470 byte(s), 91,8% of EEPROM
+Program size: 3190 words (6380 bytes), 77,9% of FLASH
+960 words (1920 bytes), 23,1% reduced by Code Compression (pentru 3 variabile in plus, globale tip char)
+
+EEPROM usage: 470 byte(s), 91,8% of EEPROM
+Program size: 3135 words (6270 bytes), 76,5% of FLASH
+975 words (1950 bytes), 23,7% reduced by Code Compression
