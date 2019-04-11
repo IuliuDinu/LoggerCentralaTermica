@@ -9,9 +9,22 @@
 #include <clock.h>
 #include <alemele.h>
 
-#define BTN_RIGHT 1-PIND.2
-#define BTN_OK 1-PIND.1
-#define BTN_LEFT 1-PIND.0
+#define BTN_RIGHT 1-PINC.0
+#define BTN_OK 1-PINC.2
+#define BTN_LEFT 1-PINC.3
+
+#define MENU_0_IDLE 0
+#define MENU_1_SET_HOUR 1
+#define MENU_2_SET_DATE 2
+#define MENU_3_READ_TODAY 3
+#define MENU_4_READ_DAILY 4
+#define MENU_5_READ_MONTHLY 5
+#define MENU_6_RESET_EEPROM 6
+
+#define MAX_NB_OF_ENTRIES_PER_DAY 85
+#define MAX_NB_OF_DAYS_IN_A_MONTH 31
+
+#define ONE_SECOND 16
 
 //char Time[12]; // for 12H display
 char Time[9];
@@ -30,17 +43,19 @@ char semisec = 0;
 //char firstDisplay = 1;
 char inputRelayStartStop = 0;
 char inputRelayStartStop_Old = 0;
+char to_be_saved_due_to_date_set;
 int for_i;
 
+
 enum State 
-{IDLE=0,
-MENU, 
-SET_HOUR, 
-SET_DATE, 
-READ_HISTORY,
-READ_STATISTICS_1_MONTH,
-READ_STATISTICS_MONTHLY,
-RESET_EEPROM} actualState;
+{STATE_IDLE=0,
+STATE_MENU, 
+STATE_SET_HOUR, 
+STATE_SET_DATE, 
+STATE_READ_ONE_DAY,
+STATE_READ_STATISTICS_1_MONTH,
+STATE_READ_STATISTICS_MONTHLY,
+STATE_RESET_EEPROM} actualState;
 
 struct clock_type
        {
@@ -60,12 +75,18 @@ eeprom int total_durate_zi[31];
 eeprom char total_porniri_zi[32];
 eeprom int total_durate_luna[6];
 eeprom int total_porniri_luna[6];
-eeprom char indexes[7];
+eeprom char numar_luna[7];
+eeprom char indexes[3];
 //eeprom char indexes[7] = {0, 0, 0, 0, 0, 0, '\0'};
 eeprom char flag_indexes0_ovf;
 eeprom char start_day;
 eeprom char stop_day;
-// rest 42 char
+eeprom char today;
+eeprom char this_month;
+eeprom char this_month_old;
+eeprom char day_saved;
+eeprom char month_saved;
+// rest 34 char
 
 // External Interrupt 1 service routine
 interrupt [EXT_INT1] void ext_int1_isr(void)
@@ -82,17 +103,17 @@ interrupt [TIM0_OVF] void timer0_ovf_isr(void)
     menuTimer++;
 }
 
-void RESET_EEPROM_char_array(eeprom char * array)
+void RESET_EEPROM_char_array(eeprom char *array, char size)
 {
     int i;
-    for (i=0; i < sizeof(array)-1; i++)
-        array[i] = 0;    
+    for (i=0; i < size-1; i++)
+        array[i] = 0;        
 }
 
-void RESET_EEPROM_int_array(eeprom int * array)
+void RESET_EEPROM_int_array(eeprom int *array, char size)
 {
     int i;
-    for (i=0; i < (sizeof(array))/2; i++)
+    for (i=0; i < size; i++)
         array[i] = 0;    
 }
 
@@ -122,10 +143,34 @@ void Save1DayData(char decrement)
 void Sum1DayData()
 {
     int i, temp = 0;
-    for (i=0; i <= 84; i++)
+    for (i=0; i < MAX_NB_OF_ENTRIES_PER_DAY; i++)
         temp += lista_durate_1zi[i];
     total_durate_zi[start_day-1] = temp;
     total_porniri_zi[start_day-1] = indexes[0];        
+}
+
+void Save1MonthData(int month)
+{
+    int i, temp = 0;
+    
+    for (i=0; i < MAX_NB_OF_DAYS_IN_A_MONTH; i++)
+        temp += total_durate_zi[i];
+    total_durate_luna[indexes[1]] = temp;
+    
+    temp = 0;
+    
+    for (i=0; i < MAX_NB_OF_DAYS_IN_A_MONTH  ; i++)
+        temp += total_porniri_zi[i];
+    total_porniri_luna[indexes[1]] = temp;
+    
+    numar_luna[indexes[1]] = month;
+
+    if (numar_luna[indexes[1]] == 0)    
+    {
+        numar_luna[indexes[1]] = 12;
+    }
+
+    //indexes[1]++; // To be done where this function is called
 }
 
 
@@ -206,12 +251,12 @@ void ProcessInputRelay_ON()
     
     start_day = GetDay(); // incepe mereu "azi" sau "maine"
     
-    if (stop_day != start_day) // last record
+    /*if (stop_day != start_day ) // last record
     {
         Save1DayData(1);
         indexes[0] = 0;
-    }
-
+    }*/
+    
     GetTimeString24H(Time1); // for calculating the difference when relay stops
     lcd_clear();
     LCD_GoToLineColumn(0,0);
@@ -228,12 +273,17 @@ void ProcessInputRelay_ON()
     
     if ((ampm != 0) && (hour != 12))
         lista_porniri_1zi[3*indexes[0]] = hour+12;
-    else
-        lista_porniri_1zi[3*indexes[0]] = hour;
-    lista_porniri_1zi[(3*indexes[0])+1] = minute;
-    lista_porniri_1zi[(3*indexes[0])+2] = second;
-    indexes[0]++; //TBD in ProcessInputRelay_OFF? What to do if MCU resets (ie power loss) during Relay=ON ?   
+    else 
+    {
+        if ((ampm == 0) && (hour == 12))
+            lista_porniri_1zi[3*indexes[0]] = 0;
+        else
+            lista_porniri_1zi[3*indexes[0]] = hour;     // 3k - the positions in lista_porniri_1zi[] for hour values
+    }
+    lista_porniri_1zi[(3*indexes[0])+1] = minute;       // 3k+1 - the positions in lista_porniri_1zi[] for minute values
+    lista_porniri_1zi[(3*indexes[0])+2] = second;       // 3k+2 - the positions in lista_porniri_1zi[] for second values
     
+    indexes[0]++; //TBD in ProcessInputRelay_OFF? What to do if MCU resets (ie power loss) during Relay=ON ?   
 }
 
 void ProcessInputRelay_OFF()
@@ -258,19 +308,21 @@ void ProcessInputRelay_OFF()
     
     stop_day = GetDay();
     
-    if (stop_day != start_day) // last record
+    if (stop_day != start_day) // stops after midnight --> last record
     {
         Save1DayData(0);
         indexes[0] = 0;
     }
     
-    if (indexes[0] > 84) // more than 85 records
+    if (indexes[0] > (MAX_NB_OF_ENTRIES_PER_DAY - 1)) // more than 85 records
     {
         Sum1DayData(); // fa backup la suma partiala - insumarea duratelor si numarului de porniri continua, dar lista de porniri si durate se suprascrie
         indexes[0] = 0;        
         flag_indexes0_ovf = 1;
     }
-        
+    
+    if (day_saved == 1)
+    day_saved = 0;        
     
 }
 
@@ -326,9 +378,9 @@ void f_SetHour(void)
         else
             lcd_puts(secs);
         
-        PORTC.0 = 1;
+        PORTD.0 = 1;
         delay_ms(2000);
-        PORTC.0 = 0;
+        PORTD.0 = 0;
         firstDisplay = 0;
     }
     
@@ -431,7 +483,7 @@ void f_SetHour(void)
             itoa(clock.second,secs);
             break;
        default:
-            actualState = MENU;
+            actualState = STATE_MENU;
             return;
        }
        
@@ -462,7 +514,7 @@ void f_SetHour(void)
             itoa(clock.second,secs);
             break;
        default:
-            actualState = MENU;
+            actualState = STATE_MENU;
             return;
        }
        
@@ -494,7 +546,7 @@ void f_SetHour(void)
             }
             SetMinute(clock.minute);
             SetSecond(clock.second);
-            actualState = IDLE;
+            actualState = STATE_IDLE;
             firstDisplay = 1;
             actualSettingNext = 0;
             actualSetting = 0;
@@ -505,9 +557,9 @@ void f_SetHour(void)
             actualSettingNext++;
     }
     
-    if (menuTimer > 240)
+    if (menuTimer > (15*ONE_SECOND))
     {
-        actualState = IDLE;
+        actualState = STATE_IDLE;
         firstDisplay = 1;
         return;
     }
@@ -574,7 +626,7 @@ void f_SetDate(void)
         firstDisplay = 0;
     }
     
-    if ((actualSetting == 0) && (displayRefresh>4))
+    if ((actualSetting == 0) && (displayRefresh>4)) // day
     {
         if (semisec%2 == 0)
         {
@@ -599,7 +651,7 @@ void f_SetDate(void)
         displayRefresh=0;
     }
     
-    if ((actualSetting == 1) && (displayRefresh>4))
+    if ((actualSetting == 1) && (displayRefresh>4))  // month
     {
         if (semisec%2 == 0)
         {
@@ -624,7 +676,7 @@ void f_SetDate(void)
         displayRefresh=0;
     }
     
-        if ((actualSetting == 2) && (displayRefresh>4))
+        if ((actualSetting == 2) && (displayRefresh>4)) // year
     {
         if (semisec%2 == 0)
         {
@@ -658,13 +710,13 @@ void f_SetDate(void)
        {
        case 0:
             clock.day--;
-            if (clock.day < 0)
+            if (clock.day < 1)
                     clock.day = 31;
             itoa(clock.day,days);
             break;
        case 1:
             clock.month--;
-            if (clock.month < 0)
+            if (clock.month < 1)
                 clock.month = 12;
             itoa(clock.month,mons);
             break;
@@ -675,7 +727,7 @@ void f_SetDate(void)
             itoa(clock.year,yrs);
             break;
        default:
-            actualState = MENU;
+            actualState = STATE_MENU;
             return;
        }
        
@@ -706,7 +758,7 @@ void f_SetDate(void)
             itoa(clock.year,yrs);
             break;
        default:
-            actualState = MENU;
+            actualState = STATE_MENU;
             return;
        }
        
@@ -725,12 +777,17 @@ void f_SetDate(void)
                 delay_ms(2000);
             }
             else
-            {
+            { 
+                if (clock.day == 1)
+                {
+                    to_be_saved_due_to_date_set = 1;
+                    this_month_old = GetMonth();
+                }
                 SetYear(clock.year);
                 SetMonth(clock.month);
                 SetDay(clock.day);
             }
-            actualState = IDLE;
+            actualState = STATE_IDLE;
             firstDisplay = 1;
             actualSettingNext = 0;
             actualSetting = 0;
@@ -741,9 +798,9 @@ void f_SetDate(void)
             actualSettingNext++;
     }
     
-    if (menuTimer > 240)
+    if (menuTimer > (15*ONE_SECOND))
     {
-        actualState = IDLE;
+        actualState = STATE_IDLE;
         firstDisplay = 1;
         return;
     }
@@ -763,7 +820,60 @@ void f_Idle(void)
     lcd_puts(buffer);
     delay_ms(2000);*/
     
+    today = GetDay();
     
+    if ((inputRelayStartStop == 0) && (day_saved == 0))
+    {
+        //today = GetDay();
+        if (today != stop_day) // new day
+        {
+            PORTD.0 = 1;
+            delay_ms(4000);
+            PORTD.0 = 0;
+            Save1DayData(0);
+            indexes[0] = 0;
+            day_saved = 1;
+        }
+    }
+    
+    if ((today == 1) && (month_saved == 0))
+    {
+        PORTD.0 = 1;
+        delay_ms(4000);
+        PORTD.0 = 0;
+        if (to_be_saved_due_to_date_set == 1)
+        {
+            Save1MonthData(this_month_old);
+            to_be_saved_due_to_date_set = 0;
+        }
+        else
+        {
+            Save1MonthData(GetMonth() - 1);
+        }
+        indexes[1]++;
+        if (indexes[1] > 5)
+            indexes[1] = 0;
+        month_saved = 1;
+        RESET_EEPROM_char_array(total_porniri_zi,32);
+        RESET_EEPROM_int_array(total_durate_zi,31);        
+    }
+    
+    if ((today != 1) && (month_saved != 0))
+    {
+        month_saved = 0;
+    }
+    
+    
+    /*if ((inputRelayStartStop == 0) && (month_saved == 0))
+    {
+        this_month = GetMonth();
+        if (this_month != this_month_old) // new month
+        {
+            Save1MonthData();
+            indexes[1]++;
+            month_saved = 1;
+        }
+    }*/
     
     if (inputRelayStartStop > inputRelayStartStop_Old)
     {
@@ -786,7 +896,12 @@ void f_Idle(void)
         LCD_GoToLineColumn(0,11);
         itoa(indexes[0],buffer);
         lcd_puts(buffer);
-        //lcd_putchar(indexes[0]+48);
+        LCD_GoToLineColumn(0,14);
+        itoa(indexes[1],buffer);
+        lcd_puts(buffer);
+        LCD_GoToLineColumn(0,17);
+        itoa(month_saved,buffer);
+        lcd_puts(buffer);
         LCD_GoToLineColumn(1,0);
         GetDateString(Date);
         lcd_puts(Date);
@@ -800,9 +915,9 @@ void f_Idle(void)
     //delay_ms(500);
     if (BTN_OK == 1)
     {
-        while (BTN_OK == 1) { PORTC.0 = 1;}
-        PORTC.0 = 0;
-        actualState = MENU;
+        while (BTN_OK == 1) { PORTD.0 = 1;}
+        PORTD.0 = 0;
+        actualState = STATE_MENU;
         menuTimer = 0;
         
     }
@@ -818,34 +933,28 @@ void f_Menu()
         LCD_GoToLineColumn(0,0);
         switch(menuNumber)
         {
-            case 0:
-                actualState = IDLE;
+            case MENU_0_IDLE:
+                actualState = STATE_IDLE;
                 menuNumber = 1;
                 return;
                 break;
-            case 1:
+            case MENU_1_SET_HOUR:
                 lcd_puts("1. SET HOUR");
                 break;
-            case 2:
+            case MENU_2_SET_DATE:
                 lcd_puts("2. SET DATE");
                 break;
-            case 3:
-                lcd_puts("3. READ HISTORY");
+            case MENU_3_READ_TODAY:
+                lcd_puts("3. READ LAST DAY");
                 break;
-            case 4:
-                lcd_puts("4. READ STATISTICS");
-                LCD_GoToLineColumn(1,0);
-                lcd_puts("LAST 30 DAYS");
+            case MENU_4_READ_DAILY:
+                lcd_puts("4. READ DAILY");
                 break;
-            case 5:
-                lcd_puts("5. READ STATISTICS");
-                LCD_GoToLineColumn(1,0);
-                lcd_puts("MONTHLY");
+            case MENU_5_READ_MONTHLY:
+                lcd_puts("5. READ MONTHLY");
                 break;
-            case 6:
-                lcd_puts("6. RESET ALL");
-                LCD_GoToLineColumn(1,0);
-                lcd_puts("HISTORY DATA");
+            case MENU_6_RESET_EEPROM:
+                lcd_puts("6. RESET EEPROM");
                 break;
             default:
                 break;            
@@ -865,7 +974,7 @@ void f_Menu()
         if(menuNumber == 7)
         {
             menuNumber = 1;
-            actualState = IDLE;
+            actualState = STATE_IDLE;
             return;
         }
     }
@@ -878,7 +987,7 @@ void f_Menu()
         if(menuNumber == 0)
         {
             menuNumber = 1;
-            actualState = IDLE;
+            actualState = STATE_IDLE;
             return;
         } 
     }
@@ -888,32 +997,35 @@ void f_Menu()
         while (BTN_OK == 1) {}
         switch(menuNumber)
         {
-            case 1:
-                actualState = SET_HOUR;
+            case MENU_1_SET_HOUR:
+                actualState = STATE_SET_HOUR;
                 break;
-            case 2:
-                actualState = SET_DATE;
+            case MENU_2_SET_DATE:
+                actualState = STATE_SET_DATE;
                 break;
-            case 3:
-                actualState = READ_HISTORY;
-                for_i = 0;
+            case MENU_3_READ_TODAY:
+                actualState = STATE_READ_ONE_DAY;                
                 break;
-            case 4:
-            case 5:
+            case MENU_4_READ_DAILY:
+                actualState = STATE_READ_STATISTICS_1_MONTH;
                 break;
-            case 6:
-                actualState = RESET_EEPROM;
+            case MENU_5_READ_MONTHLY:
+                actualState = STATE_READ_STATISTICS_MONTHLY;
+                break;
+            case MENU_6_RESET_EEPROM:
+                actualState = STATE_RESET_EEPROM;
                 break;
             default:
                 break;
         }
+        for_i = 0;
         menuTimer = 0;
         return;
     }
     
-    if (menuTimer > 80)
+    if (menuTimer > (5*ONE_SECOND))
     {
-        actualState = IDLE;
+        actualState = STATE_IDLE;
         menuNumber = 1;
         return;
     }
@@ -927,7 +1039,7 @@ void f_Menu()
 //void f_SetDate()
 //{}
 
-void f_ReadHistory()
+void f_ReadOneDay()
 {
     //char i = 0;
     char buffer[4];
@@ -937,19 +1049,28 @@ void f_ReadHistory()
     itoa(for_i+1,buffer);
     lcd_puts(buffer);
             
+    // Afiseaza ora pornirii
     ShowTheTime(0,8, lista_porniri_1zi[3*for_i], lista_porniri_1zi[(3*for_i)+1], lista_porniri_1zi[(3*for_i)+2]);
             
+    // Afiseaza durata
     LCD_GoToLineColumn(1,8);
     itoa(lista_durate_1zi[for_i],buffer);
     lcd_puts(buffer);
     lcd_puts(" min");
        
-    while ((BTN_LEFT == 0) && (BTN_RIGHT == 0) && (BTN_OK == 0)) {}
+    while ((BTN_LEFT == 0) && (BTN_RIGHT == 0) && (BTN_OK == 0))
+    {
+        if (menuTimer > (11*ONE_SECOND))
+        {
+            actualState = STATE_IDLE;
+            return;
+        }
+    }
        
     if (BTN_OK == 1)
     {
     while (BTN_OK == 1) {}
-    actualState = IDLE;    
+    actualState = STATE_IDLE;    
     }
        
     if (BTN_RIGHT == 1)
@@ -970,37 +1091,151 @@ void f_ReadHistory()
         for_i = 0;
     if (for_i < 0)
         for_i = indexes[0]-1;
-   
-        //delay_ms(2000); // TO implement navigation handler
 
-    if (menuTimer > 180)
-    {
-        actualState = IDLE;
-    }
    return;
 
 
 }
 
-void f_Read_Statistics_1_Month()
-{}
+void f_Read_Statistics_Daily()
+{
+    //char i = 0;
+    char buffer[4];
+    
+    lcd_clear();
+    LCD_GoToLineColumn(0,1);
+    itoa(for_i+1,buffer);
+    lcd_puts(buffer);
+            
+    // Afiseaza numar porniri
+    LCD_GoToLineColumn(0,7);
+    itoa(total_porniri_zi[for_i],buffer);
+    lcd_puts(buffer);
+            
+    // Afiseaza durate
+    LCD_GoToLineColumn(1,7);
+    itoa(total_durate_zi[for_i],buffer);
+    lcd_puts(buffer);
+    lcd_puts(" min");
+       
+    while ((BTN_LEFT == 0) && (BTN_RIGHT == 0) && (BTN_OK == 0))
+    {
+        if (menuTimer > (11*ONE_SECOND))
+        {
+            actualState = STATE_IDLE;
+            return;
+        }
+    }
+       
+    if (BTN_OK == 1)
+    {
+    while (BTN_OK == 1) {}
+    actualState = STATE_IDLE;    
+    }
+       
+    if (BTN_RIGHT == 1)
+    {
+    while (BTN_RIGHT == 1) {}
+    menuTimer = 0;
+    for_i++;    
+    }
+       
+    if (BTN_LEFT == 1)
+    {
+    while (BTN_LEFT == 1) {}
+    menuTimer = 0;
+    for_i--;    
+    }
+    
+    if (for_i > 30)
+        for_i = 0;
+    if (for_i < 0)
+        for_i = 30;
+
+   return;
+
+
+}
 
 void f_Read_Statistics_Monthly()
-{}
+{
+    //char i = 0;
+    char buffer[4];
+    
+    lcd_clear();
+    LCD_GoToLineColumn(0,1);
+    itoa(for_i+1,buffer);
+    lcd_puts(buffer);
+    LCD_GoToLineColumn(0,3);
+    itoa(numar_luna[for_i],buffer);
+    lcd_puts(buffer);
+            
+    // Afiseaza numar porniri
+    LCD_GoToLineColumn(0,7);
+    itoa(total_porniri_luna[for_i],buffer);
+    lcd_puts(buffer);
+            
+    // Afiseaza durate
+    LCD_GoToLineColumn(1,7);
+    itoa(total_durate_luna[for_i],buffer);
+    lcd_puts(buffer);
+    lcd_puts(" min");
+       
+    while ((BTN_LEFT == 0) && (BTN_RIGHT == 0) && (BTN_OK == 0))
+    {
+        if (menuTimer > (11*ONE_SECOND))
+        {
+            actualState = STATE_IDLE;
+            return;
+        }
+    }
+       
+    if (BTN_OK == 1)
+    {
+    while (BTN_OK == 1) {}
+    actualState = STATE_IDLE;    
+    }
+       
+    if (BTN_RIGHT == 1)
+    {
+    while (BTN_RIGHT == 1) {}
+    menuTimer = 0;
+    for_i++;    
+    }
+       
+    if (BTN_LEFT == 1)
+    {
+    while (BTN_LEFT == 1) {}
+    menuTimer = 0;
+    for_i--;    
+    }
+    
+    if (for_i > 5)
+        for_i = 0;
+    if (for_i < 0)
+        for_i = 5;
+
+    return;
+}
 
 void f_Reset_All_Eeprom()
 {
-    RESET_EEPROM_char_array(lista_durate_1zi);
-    RESET_EEPROM_char_array(lista_porniri_1zi);
-    RESET_EEPROM_char_array(total_porniri_zi);
-    RESET_EEPROM_char_array(indexes);
-    RESET_EEPROM_int_array(total_durate_zi);
-    RESET_EEPROM_int_array(total_durate_luna);
-    RESET_EEPROM_int_array(total_porniri_luna);
+    RESET_EEPROM_char_array(lista_durate_1zi,86);
+    RESET_EEPROM_char_array(lista_porniri_1zi,256);
+    RESET_EEPROM_char_array(total_porniri_zi,32);
+    RESET_EEPROM_char_array(numar_luna,7);
+    RESET_EEPROM_char_array(indexes,3);
+    RESET_EEPROM_int_array(total_durate_zi,31);
+    RESET_EEPROM_int_array(total_durate_luna,6);
+    RESET_EEPROM_int_array(total_porniri_luna,6);
     flag_indexes0_ovf = 0;
+    start_day = today;
+    stop_day = today;
+    day_saved = 1;
+    month_saved = 1;
     
     BLINK_LED1(2000,1000);
-    actualState = IDLE;
+    actualState = STATE_IDLE;
     return;
 }
 
@@ -1010,13 +1245,14 @@ void main(void)
     
     DDRD=0x00;
     DDRC=0x00;
-    PORTC.2 = 1;   
+    PORTD.2 = 1;   
 
-    lcd_init(16);
+    lcd_init(20);
     lcd_clear();
     BLINK_LED1(1000,0);
     
-
+    //today = GetDay(); //month_saved = 1;
+    //indexes[1] = 0;     month_saved = 0;
     
     //ClockInit(); 
     
@@ -1025,34 +1261,35 @@ void main(void)
     //SetSecond(00);
     //SetAmPm(0);
     
-    actualState = IDLE;
+    actualState = STATE_IDLE; 
+    to_be_saved_due_to_date_set = 0;
     
     while (1)
     {   
         switch(actualState)
         {
-            case IDLE:
+            case STATE_IDLE:
                 f_Idle();
                 break;
-            case MENU:
+            case STATE_MENU:
                 f_Menu();
                 break;
-            case SET_HOUR:
+            case STATE_SET_HOUR:
                 f_SetHour();
                 break;
-            case SET_DATE:
+            case STATE_SET_DATE:
                 f_SetDate();
                 break;
-            case READ_HISTORY:
-                f_ReadHistory();
+            case STATE_READ_ONE_DAY:
+                f_ReadOneDay();
                 break;
-            case READ_STATISTICS_1_MONTH:
-                f_Read_Statistics_1_Month();
+            case STATE_READ_STATISTICS_1_MONTH:
+                f_Read_Statistics_Daily();
                 break;
-            case READ_STATISTICS_MONTHLY:
+            case STATE_READ_STATISTICS_MONTHLY:
                 f_Read_Statistics_Monthly();
                 break;
-            case RESET_EEPROM:
+            case STATE_RESET_EEPROM:
                 f_Reset_All_Eeprom();
                 break;
             default:
