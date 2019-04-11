@@ -812,15 +812,6 @@ void f_Idle(void)
 
 void f_Menu()
 {
-    /*lcd_clear();
-    LCD_GoToLineColumn(0,0);
-    lcd_puts("SUGI PULA");
-    delay_ms(500);
-    lcd_clear();
-    LCD_GoToLineColumn(0,0);
-    itoa(menuNumber, buffer);
-    lcd_puts(buffer);
-    delay_ms(500); */
     if (displayRefresh>16)
     {
         lcd_clear();
